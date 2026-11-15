@@ -9,15 +9,33 @@ export function funnelStageRank(status) {
   return RANKS.get(String(status ?? '').trim().toUpperCase()) || 0;
 }
 
-/** Parse {num}\t{date}\t{from}\t{to} observations, ignoring torn rows. */
+/**
+ * Parse {num}\t{date}\t{from}\t{to} observations, ignoring torn rows.
+ *
+ * A row whose `to` is "-" is a retraction — the ledger's documented fix for "that
+ * transition never happened" (see funnel-velocity.mjs foldObservations): it
+ * removes that tracker#'s latest surviving observation. Without this the
+ * cumulative funnel kept the highest stage ever *logged*, so an undone
+ * mis-click on Applied stayed in the funnel permanently.
+ */
 export function parseStatusLogStages(content) {
-  const out = [];
+  const byNum = new Map();
+  const order = [];
   for (const line of String(content ?? '').replace(/\r/g, '').split('\n')) {
     const [rawNum, date, from, to] = line.split('\t').map(s => s.trim());
     if (!/^\d+$/.test(rawNum || '') || !date || !from || !to) continue;
-    out.push({ num: Number(rawNum), from, to });
+    const num = Number(rawNum);
+    if (to === '-') {
+      const last = byNum.get(num)?.pop();
+      if (last) order.splice(order.lastIndexOf(last), 1);
+      continue;
+    }
+    const obs = { num, from, to };
+    if (!byNum.has(num)) byNum.set(num, []);
+    byNum.get(num).push(obs);
+    order.push(obs);
   }
-  return out;
+  return order;
 }
 
 /** Highest observed stage per distinct current tracker identity.

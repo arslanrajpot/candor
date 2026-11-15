@@ -526,7 +526,59 @@ export function parsePortals(rawOverride) {
     .filter(c => c && c.api && c.enabled !== false)
     .map(c => ({ name: String(c.name ?? c.company ?? 'Unknown'), api: String(c.api).trim() }));
 
-  return { companies, titleMatches, config };
+  // Arslan (2026-11-06) local addition: most of this portals.yml's best AI
+  // companies (Perplexity, Cohere, LangChain, Pinecone, Sierra, Decagon,
+  // ElevenLabs, Supabase, Clerk, WorkOS, Resend, Spotify, Palantir, ...) are
+  // only reachable via `careers_url: jobs.ashbyhq.com/{slug}` or
+  // `jobs.lever.co/{slug}` + `scan_method: websearch` — meant for the full
+  // Claude-Code agent's WebSearch, so the zero-token path above (which only
+  // reads an explicit `api:` Greenhouse endpoint) silently skipped all of
+  // them. Both Ashby and Lever have real public, zero-auth JSON APIs
+  // (verified live 2026-11-06), so this derives them from careers_url the
+  // same way verify-portals.mjs does, keeping this scan genuinely free.
+  // NOTE: this block is a local customization to this script, not portals.yml
+  // — `npm run update` may overwrite openrouter-runner.mjs and drop it; re-add
+  // this block after an update if `or:scan` goes back to Greenhouse-only.
+  const ashbyLeverCompanies = tracked
+    .filter(c => c && c.enabled !== false && typeof c.careers_url === 'string')
+    .map(c => {
+      const url = c.careers_url.trim();
+      const ashby = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)/i);
+      if (ashby) return { name: String(c.name ?? 'Unknown'), provider: 'ashby', slug: ashby[1] };
+      const lever = url.match(/jobs\.lever\.co\/([^/?#]+)/i);
+      if (lever) return { name: String(c.name ?? 'Unknown'), provider: 'lever', slug: lever[1] };
+      return null;
+    })
+    .filter(Boolean);
+
+  return { companies, ashbyLeverCompanies, titleMatches, config };
+}
+
+// Arslan (2026-11-06) local addition — see parsePortals() note above.
+async function fetchAshbyJobs(slug) {
+  const apiUrl = `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}`;
+  assertSafeRemoteUrl(apiUrl);
+  const r = await fetch(apiUrl);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+  return jobs
+    .filter(j => j.isListed !== false)
+    .map(j => ({ title: j.title, location: j.location ?? '', url: j.jobUrl ?? j.applyUrl ?? '' }))
+    .filter(j => j.url);
+}
+
+// Arslan (2026-11-06) local addition — see parsePortals() note above.
+async function fetchLeverJobs(slug) {
+  const apiUrl = `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`;
+  assertSafeRemoteUrl(apiUrl);
+  const r = await fetch(apiUrl);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  const jobs = Array.isArray(data) ? data : [];
+  return jobs
+    .map(j => ({ title: j.text, location: j.categories?.location ?? '', url: j.hostedUrl ?? '' }))
+    .filter(j => j.url);
 }
 
 // ---------------------------------------------------------------------------
@@ -639,7 +691,7 @@ async function cmdScan() {
   try { portals = parsePortals(); }
   catch (e) { console.error(e.message); return; }
 
-  const { companies, titleMatches, config } = portals;
+  const { companies, ashbyLeverCompanies, titleMatches, config } = portals;
   console.log(`Greenhouse API companies: ${companies.length}\n`);
 
   const found = [];
@@ -658,6 +710,22 @@ async function cmdScan() {
         // endpoint would write an unusable link into the pipeline.
         if (!j.absolute_url) continue;
         found.push({ url: j.absolute_url, company: c.name, role: j.title, location: j.location?.name ?? '' });
+      }
+    } catch (e) {
+      console.log(`ERROR: ${e.message}`);
+    }
+  }
+
+  // Arslan (2026-11-06) local addition — see parsePortals() note above.
+  console.log(`\nAshby/Lever API companies: ${ashbyLeverCompanies.length}\n`);
+  for (const c of ashbyLeverCompanies) {
+    process.stdout.write(`  ${c.name.padEnd(25)} → `);
+    try {
+      const jobs = c.provider === 'ashby' ? await fetchAshbyJobs(c.slug) : await fetchLeverJobs(c.slug);
+      const matched = jobs.filter(j => titleMatches(j.title));
+      console.log(`${jobs.length} listings, ${matched.length} matched`);
+      for (const j of matched) {
+        found.push({ url: j.url, company: c.name, role: j.title, location: typeof j.location === 'string' ? j.location : '' });
       }
     } catch (e) {
       console.log(`ERROR: ${e.message}`);
