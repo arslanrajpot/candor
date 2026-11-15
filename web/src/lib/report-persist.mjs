@@ -24,11 +24,19 @@ const TITLE_RE = /^#\s+Evaluation:\s+(.+?)\s+(?:—|--|–|-)\s+(.+)$/m;
  * Pure, and here rather than in the route, because it is the decision point
  * for the backend evaluate pipeline: nothing is written unless this says yes.
  *
- * @param {{envelope: object|undefined, noOutputMessage: string|null, sawError: boolean, cleanExit: boolean}} signals
+ * @param {{envelope: object|undefined, noOutputMessage: string|null, sawError: boolean, cleanExit: boolean, deadPosting?: boolean}} signals
  * @returns {{ok: true} | {ok: false, message: string}}
  */
-export function evaluateRunOutcome({ envelope, noOutputMessage, sawError, cleanExit }) {
+export function evaluateRunOutcome({ envelope, noOutputMessage, sawError, cleanExit, deadPosting = false }) {
   if (noOutputMessage) return { ok: false, message: noOutputMessage };
+  // A closed posting is a correct outcome, not a failed run: say what happened
+  // instead of the generic "didn't produce a report", which reads like a bug.
+  if (deadPosting && envelope?.ok !== true) {
+    return {
+      ok: false,
+      message: "This posting looks closed or removed, so there is nothing to evaluate. Open the link to check — if it's still live, paste the job text and evaluate that.",
+    };
+  }
   if (envelope?.ok !== true || !cleanExit || sawError) {
     const why = envelope && envelope.ok === false ? ` (${envelope.error})` : "";
     return {

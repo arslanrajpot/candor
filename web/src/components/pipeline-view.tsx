@@ -1,5 +1,7 @@
 "use client";
 
+
+import { BRAND } from "@/lib/brand";
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -203,8 +205,8 @@ export function PipelineView({
         )}
       </div>
 
-      {/* tabs */}
-      <div className="mt-6 flex flex-wrap gap-1 border-b border-border">
+      {/* tabs — a segmented pill control, same buttons/handlers/ARIA as before */}
+      <div className="mt-6 flex flex-wrap gap-1 rounded-2xl border border-border bg-surface/40 p-1 md:rounded-full">
         {PIPELINE_TABS.map((t) => {
           const count =
             t === "INBOX"
@@ -222,13 +224,13 @@ export function PipelineView({
               className={cn(
                 // gap-1, not a whitespace text node: flex containers drop
                 // whitespace-only anonymous items, which rendered "INBOX0".
-                "-mb-px inline-flex items-center justify-center gap-1 border-b-2 px-3 py-2 text-xs font-medium transition-colors max-sm:min-h-[44px]",
+                "inline-flex items-center justify-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors max-sm:min-h-[44px]",
                 visibleTab === t
-                  ? "border-brand text-foreground"
-                  : "border-transparent text-muted hover:text-foreground",
+                  ? "bg-brand-soft text-brand-text"
+                  : "text-muted hover:bg-surface-hover hover:text-foreground",
               )}
             >
-              {t} <span className="text-faint tabular-nums">{count}</span>
+              {t} <span className={cn("tabular-nums", visibleTab === t ? "text-brand-text/70" : "text-faint")}>{count}</span>
             </button>
           );
         })}
@@ -448,7 +450,7 @@ function InboxEmpty({ tracked }: { tracked: number }) {
         <span className="size-2.5 rounded-full bg-foreground/15" aria-hidden="true" />
         <span className="size-2.5 rounded-full bg-foreground/15" aria-hidden="true" />
         <span className="size-2.5 rounded-full bg-foreground/15" aria-hidden="true" />
-        <span className="ml-3 font-mono text-xs tracking-wide text-muted">career-ops · inbox</span>
+        <span className="ml-3 font-mono text-xs tracking-wide text-muted">{BRAND.name} · inbox</span>
       </div>
       <div className="px-6 py-10 text-center">
         <p className="font-display text-lg">

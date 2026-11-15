@@ -3,6 +3,7 @@
 // on it, #2085), while the PDF render is a plain Node child process with no CLI
 // sandbox in the way (#2172) and so passes `spawn` itself to renderAndMarkPdf.
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cliSubstitutionNotice, cliUnavailableError, resolveCliOrFallback } from "@/lib/clis";
@@ -16,13 +17,14 @@ import { createCvEnvelopeFilter, type CvEnvelope } from "@/lib/cv-envelope.mjs";
 import { createReportEnvelopeFilter } from "@/lib/report-envelope.mjs";
 import { persistEvaluation, evaluateRunOutcome } from "@/lib/report-persist.mjs";
 import { buildPrompt, isShellSafeCompanyName } from "@/lib/run-prompts.mjs";
+import { prefetchJdText } from "@/lib/jd-prefetch.mjs";
 import { parseCoverRequest } from "@/lib/cover-brief.mjs";
 import { capabilitiesFor } from "@/lib/worker-capabilities.mjs";
 import { fencingReport, isCliAllowedForCapabilities } from "@/lib/cli-fencing.mjs";
 import { claudeCliArgs } from "@/lib/claude-invocation.mjs";
 import { resolveCvTemplate } from "@/lib/core/cv-template.mjs";
 import { profileRef } from "@/lib/core/profile-path.mjs";
-import { acquireTrackerWrite, releaseTrackerWrite } from "@/lib/core/run-registry";
+import { acquireTrackerWrite, releaseTrackerWrite, acquireInFlightRun, releaseInFlightRun } from "@/lib/core/run-registry";
 import { createRunFinalizer } from "@/lib/run-finalizer.mjs";
 import { readJsonObject } from "@/lib/json-body";
 
@@ -37,8 +39,28 @@ export async function POST(req: Request) {
   if (!input || !requestedCliId) {
     return new Response(JSON.stringify({ error: "input and cliId required" }), { status: 400 });
   }
+  // `input` is a tracker row number or a posting URL — never legitimately long.
+  // Uncapped, it gets spliced straight into the agent's prompt (buildPrompt
+  // below), so an oversized value is both a memory issue and a real-money cost
+  // multiplier per run, not just an oversized request.
+  const MAX_INPUT_LENGTH = 2000;
+  if (input.length > MAX_INPUT_LENGTH) {
+    return new Response(JSON.stringify({ error: `input is too long (max ${MAX_INPUT_LENGTH} characters)` }), { status: 400 });
+  }
+  // Evaluate/pdf/cover spend real tokens per run. A double-click, a second tab,
+  // or a replayed request for the same application must not spend twice.
+  // Acquired here (check-and-set is atomic — see run-registry) and released on
+  // every exit path below, including every early `return` from here on.
+  const costsMoney = kind === "evaluate" || kind === "pdf" || kind === "cover";
+  if (costsMoney && !acquireInFlightRun(kind, input)) {
+    return new Response(JSON.stringify({ error: `A ${kind} run for this application is already in progress.` }), { status: 409 });
+  }
+  const releaseInFlight = () => {
+    if (costsMoney) releaseInFlightRun(kind, input);
+  };
   const resolved = resolveCliOrFallback(requestedCliId);
   if (!resolved) {
+    releaseInFlight();
     return new Response(JSON.stringify(cliUnavailableError(requestedCliId)), {
       status: 404,
       headers: { "Content-Type": "application/json" },
@@ -50,6 +72,7 @@ export async function POST(req: Request) {
   const substitution = cliSubstitutionNotice(resolved);
   const capabilities = capabilitiesFor(kind);
   if (!isCliAllowedForCapabilities(cliId, capabilities)) {
+    releaseInFlight();
     return new Response(
       JSON.stringify({ error: `CLI '${cliId}' cannot run write-capable worker '${kind}' without a verified permission adapter.` }),
       { status: 400, headers: { "Content-Type": "application/json" } },
@@ -70,6 +93,7 @@ export async function POST(req: Request) {
     ? path.join(/* turbopackIgnore: true */ careerOpsRoot(), required)
     : "";
   if (required && !fs.existsSync(/* turbopackIgnore: true */ requiredPath)) {
+    releaseInFlight();
     return new Response(
       JSON.stringify({
         error: `This needs a complete career-ops checkout (${required}). CAREER_OPS_ROOT has data only — point it at a full checkout.`,
@@ -83,6 +107,7 @@ export async function POST(req: Request) {
   // typing. Refuse rather than sanitize: a silently rewritten name would repair the
   // wrong portal.
   if (kind === "fix-portal" && !isShellSafeCompanyName(input)) {
+    releaseInFlight();
     return new Response(
       JSON.stringify({ error: "That company name has characters I can't safely pass to the portal checker — rename it in portals.yml first." }),
       { status: 400, headers: { "Content-Type": "application/json" } },
@@ -92,6 +117,7 @@ export async function POST(req: Request) {
   // An A–F score is meaningless without a CV to score against — the CLI would
   // hallucinate a fit narrative and still emit a VERDICT. Require cv.md first.
   if ((kind === "evaluate" || kind === "pdf" || kind === "cover") && !fs.existsSync(path.join(careerOpsRoot(), "cv.md"))) {
+    releaseInFlight();
     return new Response(
       JSON.stringify({ error: "Add your CV first so I can score this against you — drop it on the home page." }),
       { status: 400, headers: { "Content-Type": "application/json" } },
@@ -109,6 +135,7 @@ export async function POST(req: Request) {
   if (kind === "pdf") {
     const pathsResult = resolvePdfPaths(input, today, careerOpsRoot(), findReportFile);
     if (!pathsResult.ok) {
+      releaseInFlight();
       return new Response(JSON.stringify({ error: pathsResult.error }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -119,6 +146,7 @@ export async function POST(req: Request) {
 
   const coverRequest = kind === "cover" ? parseCoverRequest({ input, brief, root: careerOpsRoot(), findReportFile }) : undefined;
   if (coverRequest && !coverRequest.ok) {
+    releaseInFlight();
     return new Response(JSON.stringify({ error: coverRequest.error }), {
       status: 400,
       headers: { "Content-Type": "application/json" },
@@ -142,6 +170,10 @@ export async function POST(req: Request) {
   // The root is passed, not re-derived: a relative CAREER_OPS_PROFILE resolves
   // against it, and `process.cwd()` here is `<core>/web` (see cv-template.mjs).
   const cvTemplate = kind === "pdf" ? await resolveCvTemplate(careerOpsRoot()) : undefined;
+  // Evaluate reads the posting. WebFetch returns an empty shell for
+  // JavaScript-rendered boards, so fetch it here with the core's own scripts and
+  // hand the agent the text. A miss (null) keeps the old WebFetch path.
+  const prefetched = kind === "evaluate" ? await prefetchJdText(input, careerOpsRoot()) : null;
   const prompt = buildPrompt({
     kind,
     input,
@@ -150,6 +182,8 @@ export async function POST(req: Request) {
     postedAt,
     lang,
     cvTemplate,
+    jdText: prefetched?.text,
+    jdFence: prefetched ? randomUUID().slice(0, 12) : undefined,
     reportFile: pdfPaths?.reportFile ?? (coverRequest?.ok ? coverRequest.reportFile : undefined),
     coverBrief: coverRequest?.ok ? coverRequest.brief : undefined,
     profile: profileRef(careerOpsRoot()),
@@ -200,6 +234,7 @@ export async function POST(req: Request) {
     // of the process and acquireTrackerWrite blocks every later evaluate/pdf run:
     // a refused argv would take the tracker down with it.
     if (writeToken !== null) releaseTrackerWrite(writeToken);
+    releaseInFlight();
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "failed to start the CLI" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
@@ -230,11 +265,13 @@ export async function POST(req: Request) {
   // actually closes and any render or persist work has finished.
   const finishRun = createRunFinalizer(child, () => {
     if (writeToken !== null) releaseTrackerWrite(writeToken);
+    releaseInFlight();
   });
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let buf = "";
       let emittedText = false; // any assistant text delta → the CLI actually ran
+      let sawDeadPosting = false; // the agent reported the posting closed/removed
       // Set ONLY by an authoritative structured-stream signal (the ev.error branch
       // in processParsedLine below) — never by flagStderrLine. A stderr keyword
       // match is a guess, not a verdict; see stderrErrorSnippet.
@@ -367,12 +404,17 @@ export async function POST(req: Request) {
       // newline-terminates before exiting isn't dropped along with the usage event
       // it carries.
       const joinAgentText = createAgentTextJoiner();
+      // The mode file ends a closed posting with a ---DEAD_POSTING--- line. Text
+      // arrives in tiny chunks ("DEAD_POST" + "ING---"), so scan a rolling window.
+      let deadScan = "";
       const processParsedLine = (line: string) => {
         if (!spec.parseEvent) return;
         const ev = spec.parseEvent(line);
         const text = joinAgentText(ev);
         if (text) {
           emittedText = true;
+          deadScan = (deadScan + text).slice(-80);
+          if (/DEAD_POSTING/.test(deadScan)) sawDeadPosting = true;
           // sendAgentText, NEVER send: pdf's CV arrives inside the agent's text as a
           // <<cv-html>> envelope, so parsed text has to reach cvFilter too or the
           // backend has nothing to save and the 25 KB body floods the run log (#2185).
@@ -579,6 +621,7 @@ export async function POST(req: Request) {
             noOutputMessage: noOutputError(),
             sawError,
             cleanExit,
+            deadPosting: sawDeadPosting,
           });
           if (!outcome.ok) {
             send({ type: "error", msg: outcome.message });

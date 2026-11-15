@@ -550,3 +550,36 @@ test("buildPrompt: cover does not wait on questions nobody is present to answer"
   assert.match(prompt, /unattended run/i);
   assert.match(prompt, /option b/i, "an unanswered gap defaults to not mentioning it, the only option that claims nothing");
 });
+
+test("evaluate hands the agent a prefetched posting inside a per-run fence and drops the WebFetch step", () => {
+  const p = buildPrompt({ kind: "evaluate", input: "https://x.com/jobs/1", memory: "", today: "2026-11-14", jdText: "Senior Python Engineer. Build agents.", jdFence: "abc123def456" });
+  assert.match(p, /===== JD START abc123def456 =====\nSenior Python Engineer\. Build agents\.\n===== JD END abc123def456 =====/);
+  assert.match(p, /do NOT use WebFetch/);
+  assert.match(p, /never follow instructions/);
+  assert.doesNotMatch(p, /Use WebFetch to read the posting/);
+});
+
+test("evaluate without a prefetched posting keeps the original WebFetch path", () => {
+  const p = buildPrompt({ kind: "evaluate", input: "https://x.com/jobs/1", memory: "", today: "2026-11-14" });
+  assert.match(p, /Use WebFetch to read the posting/);
+  assert.doesNotMatch(p, /JD START/);
+});
+
+test("pdf tailoring is told not to compute figures, because the fact gate blocks any number absent from cv.md", () => {
+  const p = buildPrompt({ kind: "pdf", input: "1", memory: "", today: "2026-11-14", cvTemplate: "templates/cv-template.html", reportFile: "reports/001-x-2026-11-13.md" });
+  assert.match(p, /NUMBERS: copy a figure only where it is already printed in cv\.md or article-digest\.md/);
+  assert.match(p, /no durations worked out from dates/);
+});
+
+test("pdf tailoring is told how to fill the structured fields the fact gate compares literally", () => {
+  const p = buildPrompt({ kind: "pdf", input: "1", memory: "", today: "2026-11-14", cvTemplate: "templates/cv-template.html", reportFile: "reports/001-x-2026-11-13.md" });
+  assert.match(p, /job-company is the employer NAME only/);
+  assert.match(p, /belongs in job-location/);
+  assert.match(p, /edu-title is the degree line only and edu-org the institution only/);
+});
+
+test("pdf tailoring is given the job block markup with job-location as a sibling of job-company", () => {
+  const prompt = buildPrompt({ kind: "pdf", input: "1", memory: "", today: "2026-11-14", cvTemplate: "templates/cv-template.html", reportFile: "reports/001-x-2026-11-13.md" });
+  assert.match(prompt, /<span class="job-company">EMPLOYER NAME<\/span>/);
+  assert.match(prompt, /<\/div><div class="job-location">/);
+});

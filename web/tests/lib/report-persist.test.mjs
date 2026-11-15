@@ -469,3 +469,15 @@ test("persistEvaluation: refuses a non-ISO today rather than joining it into a p
   assert.equal(result.ok, false);
   assert.match(result.error, /Invalid evaluation date/);
 });
+
+test("a closed posting is reported as closed, not as a generic failed run", () => {
+  const out = evaluateRunOutcome({ envelope: undefined, noOutputMessage: null, sawError: false, cleanExit: true, deadPosting: true });
+  assert.equal(out.ok, false);
+  assert.match(out.message, /closed or removed/);
+  assert.doesNotMatch(out.message, /didn't produce a report/);
+});
+
+test("a dead-posting marker never blocks a report that was actually produced", () => {
+  const out = evaluateRunOutcome({ envelope: { ok: true, markdown: "# x" }, noOutputMessage: null, sawError: false, cleanExit: true, deadPosting: true });
+  assert.deepEqual(out, { ok: true });
+});

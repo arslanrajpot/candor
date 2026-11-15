@@ -18,6 +18,18 @@ test("readJsonObject returns null for bodies a route cannot read fields from", a
   }
 });
 
+test("readJsonObject rejects a body over the 256KB cap instead of buffering it", async () => {
+  const oversized = JSON.stringify({ input: "x".repeat(300 * 1024) });
+  assert.equal(await readJsonObject(post(oversized)), null);
+});
+
+test("readJsonObject accepts a body right at the cap", async () => {
+  // 250KB of payload plus the JSON wrapper stays under the 256KB cap.
+  const atCap = JSON.stringify({ input: "x".repeat(250 * 1024) });
+  const result = await readJsonObject(post(atCap));
+  assert.equal(typeof result?.input, "string");
+});
+
 test("every API route reads its JSON body through readJsonObject", () => {
   const apiDir = fileURLToPath(new URL("../../src/app/api", import.meta.url));
   const direct = listTree(apiDir, { match: /route\.ts$/ })

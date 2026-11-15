@@ -41,3 +41,36 @@ export function releaseTrackerWrite(token: number): void {
 export function isTrackerWriting(): boolean {
   return writing.size > 0;
 }
+
+// Separate from `writing` above: that set guards the tracker file against a
+// concurrent delete, keyed by nothing in particular. This one stops the SAME
+// cost-incurring run (same kind + same application) from being launched
+// twice while it's already in flight — a double-click, a second browser tab,
+// or a replayed request would otherwise spend real LLM tokens/money a second
+// time for no reason. Keyed by "kind:input" so an evaluate and a pdf run for
+// the same application don't block each other.
+const inFlight = new Set<string>();
+
+function inFlightKey(kind: string, input: string): string {
+  return `${kind}:${input}`;
+}
+
+/**
+ * Atomically checks-and-marks a run as in flight: returns true and marks it if
+ * none was running, or false (and marks nothing) if one already was. A
+ * separate check-then-acquire would race between two near-simultaneous
+ * requests for the same application — this is one call so there's no gap for
+ * that between them (no await happens between the check and the add).
+ * Caller must call releaseInFlightRun() exactly once, on every exit path,
+ * whenever this returns true.
+ */
+export function acquireInFlightRun(kind: string, input: string): boolean {
+  const key = inFlightKey(kind, input);
+  if (inFlight.has(key)) return false;
+  inFlight.add(key);
+  return true;
+}
+
+export function releaseInFlightRun(kind: string, input: string): void {
+  inFlight.delete(inFlightKey(kind, input));
+}

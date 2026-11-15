@@ -1,5 +1,7 @@
 "use client";
 
+
+import { BRAND } from "@/lib/brand";
 import { useEffect, useState } from "react";
 import {
   Check,
@@ -104,7 +106,7 @@ export function ConfigForm() {
     <div className="mx-auto max-w-2xl px-6 py-10">
       <h1 className="font-display text-2xl tracking-tight text-landing">Config</h1>
       <p className="mt-1 text-sm text-muted">
-        Run career-ops on your own AI, right on your computer. Your CV and data never leave your machine.
+        Run {BRAND.name} on your own AI, right on your computer. Your files stay on this machine; only the text being evaluated goes to the AI tool you choose.
       </p>
 
       {/* Engine mode */}
@@ -141,7 +143,7 @@ export function ConfigForm() {
         {mode === "cli" && (
           <div>
             <p className="mb-1 text-sm text-muted">
-              career-ops uses an AI tool you already have — signed in, your own usage, nothing to paste.
+              {BRAND.name} uses an AI tool you already have — signed in, your own usage, nothing to paste.
             </p>
             <p className="mb-3 text-xs text-faint">Works with Claude Code, Codex, OpenCode and more — free ones work great.</p>
             {clis === null ? (

@@ -2,18 +2,19 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Design tokens — inherited from career-ops-docs. Brand burnt-orange #dd7627
-   (mode-invariant), zinc neutrals, light + dark (Fumadocs neutral values).
+   Design tokens — Candor's own teal/cyan (mode-invariant), replacing the
+   inherited career-ops burnt-orange. Zinc neutrals, light + dark (Fumadocs
+   neutral values) are unchanged — only the brand hue moved.
    ────────────────────────────────────────────────────────────────────────── */
 @theme {
-  --color-brand: hsl(26 73% 51%);
-  --color-brand-200: hsl(33 100% 60%); /* hover / lighter */
-  /* Near-black on the brand orange: 5.2:1 on brand, 8.3:1 on brand-200 hover
-     (white was 3.14:1, an AA fail in BOTH themes since the button is the same).
-     The brand orange itself is untouched — only what sits on top of it. */
-  --color-brand-foreground: hsl(24 30% 12%);
-  --color-brand-soft: hsl(26 73% 51% / 0.12);
-  --color-brand-secondary: #fc7744;
+  --color-brand: hsl(188 78% 42%);
+  --color-brand-200: hsl(188 85% 58%); /* hover / lighter */
+  /* Near-black on the brand teal: ~6.8:1 on brand, higher still on brand-200
+     hover (white is ~3.1:1, an AA fail in BOTH themes since the button is the
+     same). The brand teal itself is untouched — only what sits on top of it. */
+  --color-brand-foreground: hsl(188 40% 9%);
+  --color-brand-soft: hsl(188 78% 42% / 0.12);
+  --color-brand-secondary: hsl(172 70% 48%);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-serif: var(--font-instrument-serif), ui-serif, Georgia, serif;
@@ -31,10 +32,10 @@
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-landing: var(--landing); /* editorial olive (light) / cream (dark) — docs landing-foreground */
-  /* Brand as SMALL TEXT: the raw orange only passes AA in dark (4.95); in light
-     it's 2.6-3.1 on cream/white. brand-text darkens it for light and keeps the
-     raw brand in dark. Use for small text/badges; brand stays for accents,
-     surfaces, icons and large headings (≥24px passes at 3:1). */
+  /* Brand as SMALL TEXT: the raw teal doesn't clear AA on light surfaces at
+     this lightness, so brand-text darkens it there and keeps the raw brand in
+     dark, where it already passes. Use for small text/badges; brand stays for
+     accents, surfaces, icons and large headings (≥24px passes at 3:1). */
   --color-brand-text: var(--brand-text);
 }
 
@@ -47,7 +48,7 @@
   --muted: hsl(35 9% 34%); /* darker than before for readable body text */
   --faint: hsl(35 7% 42%); /* AA: ~4.6:1 on #fff (was 50% ≈ 3.9:1, failed small text) */
   --landing: #59592a; /* olive editorial headline */
-  --brand-text: hsl(26 80% 36%); /* darkened brand for small text: 5.5 white / 5.1 cream / 4.7 surface-hover */
+  --brand-text: hsl(188 88% 26%); /* darkened brand for small text on light surfaces */
   --dot: 40 8% 42% / 0.09;
   --pre-bg: #f2f1ed;
   color-scheme: light;
@@ -62,7 +63,7 @@
   --muted: #a1a1aa;
   --faint: #8b8b95; /* AA: ~4.6:1 on #161616 (was #71717a ≈ 3.7:1, failed small text) */
   --landing: #e4e2d0; /* cream editorial headline */
-  --brand-text: hsl(26 73% 51%); /* raw brand already passes in dark (≥4.95 on bg/surface) */
+  --brand-text: hsl(188 78% 42%); /* raw brand already passes in dark */
   --dot: 240 5% 65% / 0.10;
   --pre-bg: #111111;
   color-scheme: dark;

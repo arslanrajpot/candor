@@ -1,3 +1,4 @@
+import { BRAND } from "@/lib/brand";
 import { ChevronDown, ExternalLink } from "lucide-react";
 
 // Transparency = our differentiator ("why it's a 4.0 for YOU"). The wording is
@@ -34,7 +35,7 @@ export function ScoreMethodology() {
       <div className="space-y-5 border-t border-border px-5 py-4 text-sm">
         <p className="text-muted">
           Every role is scored <strong className="text-foreground">1.0–5.0</strong> across six dimensions.{" "}
-          <strong className="text-brand">4.0</strong> is the apply / don&apos;t-apply line — below it, career-ops
+          <strong className="text-brand">4.0</strong> is the apply / don&apos;t-apply line — below it, {BRAND.name}
           recommends against applying.
         </p>
         <div>

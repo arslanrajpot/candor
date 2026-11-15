@@ -5,6 +5,8 @@ import Link from "next/link";
 import { FileText, Loader2, Mail, RotateCcw, TriangleAlert } from "lucide-react";
 import { useJobs } from "@/components/jobs/job-store";
 import { CostBadge } from "@/components/cost/cost-badge";
+import { SpendConfirm } from "@/components/cost/spend-confirm";
+import { estimateRunCost, formatRunCostEstimate } from "@/lib/run-cost-estimate.mjs";
 import { pdfButtonState } from "@/lib/pdf-button-state.mjs";
 import { COVER_TONES } from "@/lib/cover-tones.mjs";
 
@@ -25,6 +27,12 @@ export function CoverDraftButton({ n, company }: { n: string; company: string })
   const { jobs, startJob } = useJobs();
   const [open, setOpen] = useState(false);
   const [savedBrief, setSavedBrief] = useState<Record<string, string> | null>(null);
+  // The question form is a deliberate pause already, but it's data collection,
+  // not a spend confirmation — nothing in it says "this will cost tokens,
+  // proceed?" before the real run fires. Submitting it now only stages the
+  // brief; the run itself only starts from the Confirm button below.
+  const [pendingBrief, setPendingBrief] = useState<Record<string, string> | null>(null);
+  const estimate = useMemo(() => estimateRunCost(jobs, "cover"), [jobs]);
   const job = useMemo(
     () => jobs.filter((j) => j.kind === "cover" && j.input === n).sort((a, b) => b.startedAt - a.startedAt)[0],
     [jobs, n],
@@ -48,8 +56,14 @@ export function CoverDraftButton({ n, company }: { n: string; company: string })
     const data = new FormData(e.currentTarget);
     const brief = Object.fromEntries(["why", "problem", "approach", "tone"].map((k) => [k, String(data.get(k) ?? "")]));
     setSavedBrief(brief);
-    startJob({ title: `Cover letter · ${company}`, subtitle: "draft for this role", kind: "cover", input: n, page: `/pipeline/${n}`, brief });
+    setPendingBrief(brief);
     setOpen(false);
+  };
+
+  const fire = () => {
+    if (!pendingBrief) return;
+    startJob({ title: `Cover letter · ${company}`, subtitle: "draft for this role", kind: "cover", input: n, page: `/pipeline/${n}`, brief: pendingBrief });
+    setPendingBrief(null);
   };
 
   if (state.kind === "running")
@@ -126,6 +140,18 @@ export function CoverDraftButton({ n, company }: { n: string; company: string })
             </button>
           </div>
         </form>
+      )}
+      {pendingBrief && (
+        <div className="basis-full">
+          <SpendConfirm
+            summary={`Draft this cover letter? (${formatRunCostEstimate(estimate)})`}
+            onConfirm={fire}
+            onCancel={() => {
+              setPendingBrief(null);
+              setOpen(true); // back to editing — the answers are still in savedBrief
+            }}
+          />
+        </div>
       )}
     </>
   );

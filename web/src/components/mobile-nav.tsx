@@ -5,13 +5,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { CoMark } from "@/components/co-mark";
+import { CandorMark } from "@/components/candor-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { WorkerPills } from "@/components/jobs/worker-pills";
 import { UsageMeter } from "@/components/usage-meter";
+import { AccountMenu } from "@/components/account-menu";
 import { instrumentSerif } from "@/lib/fonts";
+import { BRAND } from "@/lib/brand";
 import { visibleNavItems, isActivePath } from "@/lib/nav-items";
 import { useJobs } from "@/components/jobs/job-store";
+import type { ShellAccount } from "@/components/app-shell";
 
 // Mobile navigation (< md): a glass top bar + a right-side slide-over drawer that
 // mirrors the desktop sidebar (nav + workers + usage + theme). Premium details:
@@ -34,7 +37,7 @@ const STYLE = `
 @media(prefers-reduced-motion:reduce){.co-mdrawer,.co-mscrim{transition:none}.co-pulse{animation:none}}
 `;
 
-export function MobileNav({ followupsEnabled }: { followupsEnabled: boolean }) {
+export function MobileNav({ followupsEnabled, account }: { followupsEnabled: boolean; account: ShellAccount }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
@@ -105,9 +108,9 @@ export function MobileNav({ followupsEnabled }: { followupsEnabled: boolean }) {
       <style>{STYLE}</style>
 
       <header className="co-mnav flex items-center gap-2 border-b border-border px-4 pb-3 md:hidden">
-        <Link href="/" className="flex min-h-[44px] items-center gap-2" aria-label="career-ops home">
-          <CoMark size={26} />
-          <span className={`${instrumentSerif.className} relative -top-px text-xl text-landing`}>career-ops</span>
+        <Link href="/" className="flex min-h-[44px] items-center gap-2" aria-label={`${BRAND.name} home`}>
+          <CandorMark size={26} />
+          <span className={`${instrumentSerif.className} relative -top-px text-xl text-landing`}>{BRAND.name}</span>
         </Link>
         <div className="ml-auto flex items-center gap-0.5">
           <ThemeToggle />
@@ -180,6 +183,7 @@ export function MobileNav({ followupsEnabled }: { followupsEnabled: boolean }) {
         </div>
 
         <div className="co-msafe mt-auto space-y-3 border-t border-border px-4 pt-4">
+          <AccountMenu {...account} />
           <UsageMeter />
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">

@@ -5,14 +5,16 @@ import { AppShell } from "@/components/app-shell";
 import { RouteProgressHost } from "@/components/route-progress-host";
 import { ThemeProvider } from "@/components/theme-provider";
 import { readFollowupsEnabled } from "@/lib/followups-server";
+import { currentOwner, initialsOf } from "@/lib/owner";
+import { BRAND } from "@/lib/brand";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "career-ops — official web experience",
-  description: "The official, local-first web experience for career-ops.",
+  title: `${BRAND.name} — ${BRAND.tagline.replace(/\.$/, "").toLowerCase()}`,
+  description: BRAND.description,
   // Home-screen / standalone (iOS): let our theme-color flow up to the status bar
   // + Dynamic Island; safe-area insets handle the layout.
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "career-ops" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: BRAND.name },
 };
 
 export const viewport: Viewport = {
@@ -32,6 +34,14 @@ const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('career-ops:the
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   await connection();
   const followupsEnabled = readFollowupsEnabled();
+  const owner = currentOwner();
+  const account = {
+    name: owner.name,
+    initials: initialsOf(owner.name),
+    plan: owner.plan,
+    // Sign-out only means something when the password gate issues sessions.
+    canSignOut: Boolean(process.env.CAREER_OPS_DASHBOARD_PASSWORD_HASH && process.env.CAREER_OPS_DASHBOARD_SESSION_SECRET),
+  };
   return (
     <html
       lang="en"
@@ -42,7 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <RouteProgressHost />
         <ThemeProvider>
-          <AppShell followupsEnabled={followupsEnabled}>{children}</AppShell>
+          <AppShell followupsEnabled={followupsEnabled} account={account}>{children}</AppShell>
         </ThemeProvider>
       </body>
     </html>
