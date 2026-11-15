@@ -105,7 +105,10 @@ export async function POST(req: Request) {
     // reformats — comments are not preserved; the .bak is the safety net).
     atomicWriteWithBackup(file, yaml.dump(merged, { lineWidth: 100, noRefs: true }));
   } catch (e) {
-    return Response.json({ error: e instanceof Error ? e.message : "write failed" }, { status: 500 });
+    // Sliced like every other route that can surface a raw fs error (e.g.
+    // apply/session, apply/fill) — an ENOENT/EACCES message typically embeds
+    // the full absolute server path, which doesn't belong in a response body.
+    return Response.json({ error: e instanceof Error ? e.message.slice(0, 200) : "write failed" }, { status: 500 });
   }
   return Response.json({ ok: true, seeded });
 }
