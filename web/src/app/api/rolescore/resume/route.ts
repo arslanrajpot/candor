@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/rolescore/db.mjs";
-import { getSessionUserId } from "@/lib/rolescore/session.mjs";
+import { getSessionUserId } from "@/lib/rolescore/current-user.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  const body = await req.json().catch(() => null);
+  const body = await readJsonObject(req);
   const content = typeof body?.content === "string" ? body.content : "";
   if (!content.trim()) {
     return NextResponse.json({ error: "Resume text can't be empty." }, { status: 400 });

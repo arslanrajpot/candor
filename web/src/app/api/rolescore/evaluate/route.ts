@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/rolescore/session.mjs";
+import { getSessionUserId } from "@/lib/rolescore/current-user.mjs";
 import { runEvaluation } from "@/lib/rolescore/evaluate.mjs";
 import { checkRateLimit } from "@/lib/rolescore/rate-limit.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const body = await req.json().catch(() => null);
+  const body = await readJsonObject(req);
   const keyId = typeof body?.keyId === "string" ? body.keyId : "";
   const jobDescription = typeof body?.jobDescription === "string" ? body.jobDescription.trim() : "";
 

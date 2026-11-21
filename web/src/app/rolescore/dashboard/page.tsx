@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSessionUserId } from "@/lib/rolescore/session.mjs";
+import { getSessionUserId } from "@/lib/rolescore/current-user.mjs";
 import { getDb } from "@/lib/rolescore/db.mjs";
 import { DashboardClient } from "./dashboard-client";
 

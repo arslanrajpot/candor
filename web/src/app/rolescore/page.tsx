@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSessionUserId } from "@/lib/rolescore/session.mjs";
+import { getSessionUserId } from "@/lib/rolescore/current-user.mjs";
 import { LoginForm } from "./login-form";
 
 export default async function RoleScoreHome({

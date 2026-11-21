@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/rolescore/db.mjs";
-import { getSessionUserId } from "@/lib/rolescore/session.mjs";
+import { getSessionUserId } from "@/lib/rolescore/current-user.mjs";
 import { encryptSecret, maskKey } from "@/lib/rolescore/crypto.mjs";
 import { PROVIDERS, isKnownProvider } from "@/lib/rolescore/providers.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  const body = await req.json().catch(() => null);
+  const body = await readJsonObject(req);
   const provider = typeof body?.provider === "string" ? body.provider : "";
   const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
   const label = typeof body?.label === "string" ? body.label.trim().slice(0, 60) : null;

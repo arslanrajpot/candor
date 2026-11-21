@@ -1,8 +1,14 @@
 // RoleScore's own per-user session — separate from the candor single-password
 // dashboard gate (dashboard-session.mjs). Node runtime only (route handlers +
 // server components), so plain node:crypto HMAC rather than Web Crypto.
+//
+// Deliberately has NO import of "next/headers" or anything else Next-only:
+// that's what makes this module runnable under plain `node --test` outside
+// the Next build/runtime (which resolves "next/headers" via export
+// conditions a bare Node process doesn't have). The cookie read lives in the
+// sibling current-user.mjs instead — same split dashboard-session.mjs uses
+// (it signs/verifies tokens; src/proxy.ts does the actual cookie read).
 import { createHmac, randomUUID } from "node:crypto";
-import { cookies } from "next/headers";
 
 export const ROLESCORE_SESSION_COOKIE = "rolescore_session";
 const DEFAULT_MAX_AGE_SECONDS = 60 * 60 * 24 * 90; // 90 days — low-stakes, invite-only tool
@@ -88,9 +94,3 @@ export function verifyLinkToken(token) {
 // short-lived (15 min) by design, so a restart re-opening a small replay
 // window is an acceptable trade against adding a persistence layer for this.
 const consumedNonces = new Set();
-
-/** Reads the current request's session cookie (Node runtime: server components, route handlers). */
-export async function getSessionUserId() {
-  const store = await cookies();
-  return verifySessionToken(store.get(ROLESCORE_SESSION_COOKIE)?.value);
-}

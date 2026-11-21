@@ -4,6 +4,7 @@ import { getDb } from "@/lib/rolescore/db.mjs";
 import { createLinkToken } from "@/lib/rolescore/session.mjs";
 import { sendMagicLink, isEmailConfigured } from "@/lib/rolescore/mailer.mjs";
 import { checkRateLimit, clientIp } from "@/lib/rolescore/rate-limit.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const body = await req.json().catch(() => null);
+  const body = await readJsonObject(req);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!isValidEmail(email)) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
