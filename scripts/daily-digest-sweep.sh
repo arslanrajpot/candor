@@ -20,7 +20,13 @@
 # JDs are fetched BEFORE the LLM runs, by scripts/fetch-jds-for-digest.mjs (a
 # plain zero-token Node script using browser-extract.mjs, which renders
 # JS-heavy boards like Workday that a simple HTTP fetch can't see). The agent
-# only ever gets Read/Write/Edit — no WebFetch, no Bash. Earlier this ran
+# only ever gets Read/Write — no Edit, no WebFetch, no Bash. (Edit was dropped
+# 2026-11-21: STEP 3 used to mark data/pipeline.md via Edit, one line at a
+# time, which tempted the agent into writing a bulk Python script instead —
+# unapprovable since Bash isn't granted, so most runs silently left the day's
+# postings unmarked for a human to notice and fix by hand. It now writes
+# data/digest-results-{date}.json instead, applied deterministically by
+# scripts/apply-digest-marks.mjs — see RESULTS_FILE below.) Earlier this ran
 # WebFetch inside the agent with a Bash(browser-extract.mjs) fallback for
 # JS-heavy boards; that was reverted after testing found `--allowedTools
 # "Bash(pattern)"` grants FULL unscoped Bash in this CLI, not the narrow
@@ -37,6 +43,7 @@ TODAY="$(date '+%Y-%m-%d')"
 LOG_FILE="$REPO/data/daily-digest-sweep.log"
 DIGEST_FILE="$REPO/reports/daily-digest-${TODAY}.md"
 JD_CACHE_FILE="$REPO/data/digest-jd-cache-${TODAY}.json"
+RESULTS_FILE="$REPO/data/digest-results-${TODAY}.json"
 mkdir -p "$(dirname "$LOG_FILE")" "$REPO/reports"
 
 # How many PASS+MARGINAL roles is "enough" for one day before stopping early,
@@ -68,7 +75,7 @@ STEP 2 — Score entries ONE AT A TIME, IN LIST ORDER, exactly like modes/triage
 
   ADAPTIVE STOP — keep a running count of PASS+MARGINAL verdicts as you go (across this run only). The moment that running count reaches ${DAILY_QUALIFIED_TARGET}, STOP after finishing the entry you're on — do not score any further entries this run, even if the list has more left. This is deliberate: on a day where most postings qualify, you stop early and cost less; on a day where most FAIL, you keep going deeper into the list (instead of stopping at a fixed small number) specifically because you haven't found enough qualified roles yet. If you reach the end of the list (up to ${DAILY_EVAL_CEILING} entries) without ever reaching ${DAILY_QUALIFIED_TARGET}, that's a legitimate outcome too — score everything in the list and stop there; never go back and re-score, and never exceed ${DAILY_EVAL_CEILING} entries scored in this run regardless of the target.
 
-STEP 3 — After scoring, edit data/pipeline.md: for every URL you actually processed in STEP 2 (PASS, MARGINAL, FAIL, or SKIP — all of them, not just PASS), find its line and change the leading '- [ ]' to '- [x]', then append ' — digest: {VERDICT} {score}/5 (${TODAY})' to the end of that line (SKIP has no score: append ' — digest: SKIP (${TODAY})' instead). Do not touch any line you did not actually score this run — that includes anything left over the ${DAILY_EVAL_CEILING} ceiling AND anything left unscored because you stopped early at the ${DAILY_QUALIFIED_TARGET}-qualified target; both roll into tomorrow's run exactly the same way. Do not touch any other file.
+STEP 3 — After scoring, write ${RESULTS_FILE} (a JSON array, one entry per URL you actually processed in STEP 2 — PASS, MARGINAL, FAIL, or SKIP, all of them, not just PASS): [{"url": "...", "verdict": "PASS"|"MARGINAL"|"FAIL"|"SKIP", "score": 4.2}, ...]. Use the exact url from the worklist and the exact score you gave it in STEP 2 (omit "score", or use null, for SKIP — it has none). Do NOT edit data/pipeline.md yourself — a separate deterministic step applies these marks after this run, because editing ~${DAILY_EVAL_CEILING} individual lines by hand is exactly the kind of bulk, mechanical edit an agent run should not attempt line-by-line (previously this produced a one-off Python script asking for Bash approval that was never available — see RESULTS_FILE in daily-digest-sweep.sh). Do not include a URL you did not actually score this run — that includes anything left over the ${DAILY_EVAL_CEILING} ceiling AND anything left unscored because you stopped early at the ${DAILY_QUALIFIED_TARGET}-qualified target; both roll into tomorrow's run exactly the same way. Do not touch any other file.
 
 STEP 4 — Write reports/daily-digest-${TODAY}.md with this structure:
 
@@ -92,17 +99,18 @@ Do not list FAIL or SKIP roles in the digest file — they are only reflected as
 
 IMPORTANT — this file may already exist from an earlier run today (a retry, or a second manual run): if reports/daily-digest-${TODAY}.md already exists, read it FIRST and MERGE into it rather than overwrite — add this run's N/P/M/F/S counts to its existing totals, and append this run's PASS/MARGINAL rows to the existing lists (keep all rows from both runs; re-sort the combined list by score, highest first). Never silently discard an earlier run's results from the same day.
 
-Hard rules for this entire run: never open a posting's apply link or submit a form, never generate a PDF or cover letter or draft application answers, never write or edit data/applications.md or any reports/ file other than today's digest, never run the oferta or auto-pipeline mode, never spawn a subagent. This is evaluation and reporting only."
+Hard rules for this entire run: never open a posting's apply link or submit a form, never generate a PDF or cover letter or draft application answers, never write or edit data/applications.md, data/pipeline.md, or any reports/ file other than today's digest, never run the oferta or auto-pipeline mode, never spawn a subagent. This is evaluation and reporting only."
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
 set +e
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') daily digest sweep starting ===" >> "$LOG_FILE" 2>&1
-"$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write" "Edit" >> "$LOG_FILE" 2>&1
+"$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write" >> "$LOG_FILE" 2>&1
 RUN_STATUS=$?
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') daily digest sweep done (exit $RUN_STATUS) -> $DIGEST_FILE ===" >> "$LOG_FILE" 2>&1
 set -e
 
 if [ "$RUN_STATUS" = "0" ] && [ -f "$DIGEST_FILE" ]; then
+  "$NODE_BIN" "$REPO/scripts/apply-digest-marks.mjs" --date "$TODAY" >> "$LOG_FILE" 2>&1 || true
   osascript -e "display notification \"Daily digest is ready: $DIGEST_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
 
   # Chained, not scheduled separately: draft-apply-sweep.sh only ever starts
