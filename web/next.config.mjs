@@ -22,6 +22,10 @@ const SECURITY_HEADERS = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // Opts into Next's own agent-driven security-upgrade tracking (next-upgrade
+  // CLI), separate from this repo's own code — lets Next flag future
+  // published advisories against this install the same way it did for 16.4.1.
+  experimental: { agentUpgrade: "security" },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
