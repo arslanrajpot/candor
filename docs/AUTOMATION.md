@@ -327,6 +327,28 @@ a hard expiry (e.g. 7 days). For an automation you want to survive
 indefinitely, independent of whether you have a chat window open, hand it to
 the OS scheduler instead and let it invoke the CLI headlessly.
 
+### GitHub Actions (free, no machine or VM to keep awake)
+
+If your fork is already on GitHub, `.github/workflows/sweeps.yml` (if present
+in your fork) runs `morningscan-wrapper.sh`, `shortlist-sweep.sh` (which
+chains into `daily-digest-sweep.sh` and `draft-apply-sweep.sh` itself),
+`portal-health-sweep.sh`, and `weekly-rollup.sh` on GitHub's hosted runners —
+free on the Actions minutes quota, no laptop or paid VM required. It only
+works with `CAREER_OPS_CLI=gemini` (set as a workflow env var, no agentic CLI
+needed — see `## 2. Triage the queue` above for why), since a plain CI
+runner can't run `claude -p`/`codex exec` with any verified tool sandboxing.
+
+Because a fork used this way is typically **public**, the workflow never
+commits personal data (`cv.md`, `config/profile.yml`, the tracker, reports,
+etc.) into it — those stay gitignored exactly as they are locally. Instead
+the workflow checks out a second, **private** repo that mirrors just those
+paths, overlays it onto the code checkout before each run, and commits any
+changes back afterward. Setup is in the comment block at the bottom of the
+workflow file itself. `websearch-discovery-sweep.sh` is not covered by this
+path for the same reason it's not on `CAREER_OPS_CLI=gemini` at all — see its
+own header — so it still needs a machine running an agentic CLI with real
+web-search tool access (the existing launchd/cron job, or a VM you control).
+
 ### Gate what a scan-and-score run merges into the tracker
 
 If you also run a scan-and-score agent (custom, or one you've built per

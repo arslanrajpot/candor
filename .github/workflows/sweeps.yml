@@ -1,0 +1,149 @@
+name: career-ops daily sweeps
+
+# Runs this repo's daily automation (see AGENTS.md "Headless / Batch Mode" and
+# docs/AUTOMATION.md) on GitHub's free hosted runners instead of a local Mac
+# or a paid cloud VM, using the Gemini-direct-API path (CAREER_OPS_CLI=gemini)
+# already built into shortlist-sweep.sh / daily-digest-sweep.sh /
+# followup-sweep.sh / draft-apply-sweep.sh.
+#
+# This repo is PUBLIC, so personal data (cv.md, config/profile.yml, the
+# tracker, reports, etc.) is NOT committed here — career-ops already
+# gitignores all of it. Instead this workflow checks out a second, PRIVATE
+# repo (candor-data) that holds exactly those files at the same relative
+# paths, overlays them onto this checkout before running anything, and
+# copies any changes back + commits them afterward. See the setup notes at
+# the bottom of this file for the one-time manual steps this requires.
+#
+# NOT covered here: websearch-discovery-sweep.sh. It deliberately stays off
+# the Gemini path (see its own header) because it needs a real agentic CLI
+# with verified tool-access sandboxing (Claude/Codex) to do live web search
+# safely — a plain CI runner calling the bare Gemini completion API can't do
+# that job without risking fabricated postings. Run it elsewhere (e.g. the
+# existing launchd job) until that's resolved.
+
+on:
+  schedule:
+    # All times UTC. Mapped from the existing launchd schedule (Asia/Karachi,
+    # UTC+5, no DST — see the plists in ~/Library/LaunchAgents on the Mac this
+    # was migrated from).
+    - cron: '0 0 * * *'   # 05:00 PKT daily  -> morningscan-wrapper.sh
+    - cron: '55 0 * * *'  # 05:55 PKT daily  -> shortlist-sweep.sh (chains into
+                          #                     daily-digest-sweep.sh and
+                          #                     draft-apply-sweep.sh itself)
+    - cron: '0 5 * * 0'   # 10:00 PKT Sunday -> portal-health-sweep.sh
+    - cron: '0 15 * * 0'  # 20:00 PKT Sunday -> weekly-rollup.sh
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Sweep to run manually'
+        required: true
+        type: choice
+        options:
+          - morningscan
+          - shortlist
+          - portalhealth
+          - weeklyrollup
+          - followup
+
+concurrency:
+  group: career-ops-sweep
+  cancel-in-progress: false
+
+jobs:
+  run-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout candor (code)
+        uses: actions/checkout@v4
+        with:
+          path: candor
+
+      - name: Checkout candor-data (private personal data)
+        uses: actions/checkout@v4
+        with:
+          repository: arslanrajpot/candor-data
+          token: ${{ secrets.CANDOR_DATA_PAT }}
+          path: candor-data
+
+      - name: Install zsh (scripts use #!/bin/zsh) and rsync
+        run: sudo apt-get update && sudo apt-get install -y zsh rsync
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Overlay personal data onto the code checkout
+        run: rsync -a --exclude='.git' candor-data/ candor/
+
+      - name: Install dependencies
+        working-directory: candor
+        run: npm ci
+
+      - name: Determine which sweep this trigger means to run
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=${{ github.event.inputs.job }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              '0 0 * * *')  echo "job=morningscan" >> "$GITHUB_OUTPUT" ;;
+              '55 0 * * *') echo "job=shortlist" >> "$GITHUB_OUTPUT" ;;
+              '0 5 * * 0')  echo "job=portalhealth" >> "$GITHUB_OUTPUT" ;;
+              '0 15 * * 0') echo "job=weeklyrollup" >> "$GITHUB_OUTPUT" ;;
+              *)            echo "job=unknown" >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
+
+      - name: Run sweep
+        working-directory: candor
+        env:
+          CAREER_OPS_CLI: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          chmod +x scripts/*.sh
+          case "${{ steps.pick.outputs.job }}" in
+            morningscan)  zsh scripts/morningscan-wrapper.sh ;;
+            shortlist)    zsh scripts/shortlist-sweep.sh ;;
+            portalhealth) zsh scripts/portal-health-sweep.sh ;;
+            weeklyrollup) zsh scripts/weekly-rollup.sh ;;
+            followup)     zsh scripts/followup-sweep.sh ;;
+            *) echo "No sweep mapped for this trigger (schedule='${{ github.event.schedule }}')"; exit 1 ;;
+          esac
+
+      - name: Copy data changes back into the candor-data checkout
+        if: always()
+        run: |
+          for p in cv.md config/profile.yml modes/_profile.md modes/_brief.md portals.yml writing-samples documents jds reports interview-prep batch/tracker-additions data; do
+            if [ -e "candor/$p" ]; then
+              mkdir -p "candor-data/$(dirname "$p")"
+              rsync -a --delete "candor/$p" "candor-data/$(dirname "$p")/"
+            fi
+          done
+
+      - name: Commit and push data changes
+        if: always()
+        working-directory: candor-data
+        run: |
+          git config user.name "career-ops-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Automated sweep update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
+
+# --- One-time setup (manual, do this in your own browser — never paste a
+# token into chat) ---
+# 1. Create a new EMPTY, PRIVATE repo at github.com/new named `candor-data`
+#    under the same account/org as this repo. No README/.gitignore/license.
+# 2. GitHub -> Settings -> Developer settings -> Personal access tokens ->
+#    Fine-grained tokens -> Generate new token, scoped to ONLY candor-data,
+#    permission "Contents: Read and write". Copy the token value.
+# 3. On THIS repo (candor): Settings -> Secrets and variables -> Actions ->
+#    New repository secret, twice:
+#      CANDOR_DATA_PAT = the token from step 2
+#      GEMINI_API_KEY  = your Gemini key from aistudio.google.com/apikey
+# 4. Push the initial data snapshot to candor-data yourself (one-time), from
+#    the prepared local bundle — commands given separately in chat.
+# 5. Test with Actions -> career-ops daily sweeps -> Run workflow ->
+#    pick "shortlist" (or any job) before trusting the cron schedule.
