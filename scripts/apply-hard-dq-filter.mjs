@@ -29,12 +29,25 @@ import { fileURLToPath } from 'url';
 import { withPipelineLock } from '../pipeline-lock.mjs';
 import { isMainModule } from '../lib/is-main-module.mjs';
 import { loadYaml } from '../lib/yaml-document.mjs';
+import { getProfilePath } from '../path-resolver.mjs';
 import { classifyTitleLocationHardDQ, HARD_DQ_VERSION } from '../lib/hard-dq-filters.mjs';
 
 const MAX_REASON = 160;
 
-function loadHomeCountry(root) {
-  const profilePath = join(root, 'config', 'profile.yml');
+const USAGE = `Usage: node scripts/apply-hard-dq-filter.mjs [--root DIR] [--dry-run] [--json]
+
+  --root DIR   Data root to read/write (default: the repository this script lives in)
+  --dry-run    Report what would be auto-skipped without writing pipeline.md
+  --json       Print a machine-readable summary instead of prose
+  --help, -h   Show this message and exit
+`;
+
+// explicitRoot is only set when the caller passed --root; getProfilePath()
+// called bare (no arg) is what honors CAREER_OPS_PROFILE — passing a root
+// always bypasses the override (see path-resolver.mjs's getProfilePath doc),
+// which is exactly right for an explicit --root but wrong as the default.
+function loadHomeCountry(explicitRoot) {
+  const profilePath = explicitRoot ? getProfilePath(explicitRoot) : getProfilePath();
   if (!existsSync(profilePath)) return undefined;
   try {
     const raw = loadYaml(readFileSync(profilePath, 'utf8')) || {};
@@ -81,10 +94,15 @@ export function applyHardDqFilter(pipelineMd, opts = {}) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
   const dryRun = argv.includes('--dry-run');
   const asJson = argv.includes('--json');
   const rootIdx = argv.indexOf('--root');
-  const root = rootIdx >= 0 ? argv[rootIdx + 1] : join(dirname(fileURLToPath(import.meta.url)), '..');
+  const explicitRoot = rootIdx >= 0 ? argv[rootIdx + 1] : undefined;
+  const root = explicitRoot || join(dirname(fileURLToPath(import.meta.url)), '..');
 
   const pipelinePath = join(root, 'data', 'pipeline.md');
   if (!existsSync(pipelinePath)) {
@@ -92,7 +110,7 @@ async function main() {
     return;
   }
 
-  const homeCountry = loadHomeCountry(root);
+  const homeCountry = loadHomeCountry(explicitRoot);
 
   const doApply = () => applyHardDqFilter(readFileSync(pipelinePath, 'utf8'), { homeCountry });
 

@@ -38,6 +38,16 @@ import { isMainModule } from '../lib/is-main-module.mjs';
 
 const DEFAULT_MAX_AGE_DAYS = 7;
 
+const USAGE = `Usage: node scripts/prune-stale-backlog.mjs [--root DIR] [--max-age-days N] [--dry-run] [--today YYYY-MM-DD] [--json]
+
+  --root DIR          Data root to read/write (default: the repository this script lives in)
+  --max-age-days N    Discard a pending posting once it has queued this many days (default: ${DEFAULT_MAX_AGE_DAYS})
+  --dry-run           Report what would be pruned without writing pipeline.md
+  --today YYYY-MM-DD  Treat this date as "today" (default: the real current date)
+  --json              Print a machine-readable summary instead of prose
+  --help, -h          Show this message and exit
+`;
+
 /** Parse scan-history.tsv into a Map<url, earliest first_seen (YYYY-MM-DD)>. */
 export function parseFirstSeen(scanHistoryTsv) {
   const lines = scanHistoryTsv.split('\n').filter((l) => l.length > 0);
@@ -96,6 +106,10 @@ export function pruneStaleEntries(pipelineMd, firstSeenByUrl, { maxAgeDays, toda
 
 async function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
   const dryRun = argv.includes('--dry-run');
   const asJson = argv.includes('--json');
   const rootIdx = argv.indexOf('--root');
