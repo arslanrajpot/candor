@@ -31,6 +31,17 @@ SHORTLIST_BATCH=150
 
 NODE_BIN="$(command -v node || echo "/opt/homebrew/bin/node")"
 
+# Zero-token pass BEFORE the batch is even selected: marks Skip, deterministically,
+# anything matching a MECHANICAL rule modes/_brief.md already documents as
+# "check this before anything else" (named country/region restriction, explicit
+# on-site/hybrid, Web3-primary title) — see lib/hard-dq-filters.mjs for the
+# matching and its safety contract. Shrinks what's left pending BEFORE
+# selectNewestPending picks the day's batch, so the LLM below only ever reads
+# postings that actually need judgment. A non-zero exit here (lock contention,
+# a malformed pipeline.md) is logged but never blocks the rest of the sweep —
+# this step is a pure optimization, not a correctness gate.
+"$NODE_BIN" "$REPO/scripts/apply-hard-dq-filter.mjs" >> "$LOG_FILE" 2>&1 || echo "apply-hard-dq-filter: non-zero exit, continuing without it this run" >> "$LOG_FILE"
+
 if ! "$NODE_BIN" "$REPO/scripts/prepare-shortlist-batch.mjs" --limit "$SHORTLIST_BATCH" >> "$LOG_FILE" 2>&1; then
   osascript -e "display notification \"Shortlist batch preparation failed — check $LOG_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
   exit 1
