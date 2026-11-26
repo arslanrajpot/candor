@@ -124,6 +124,43 @@ jobs:
             *) echo "No sweep mapped for this trigger (schedule='${{ github.event.schedule }}')"; exit 1 ;;
           esac
 
+      # No scheduled script ever called this (confirmed 2026-11-27 — a
+      # pre-existing gap, not introduced by this workflow): draft-apply-sweep.sh's
+      # batch-runner.sh call writes one tracker-addition TSV per evaluated
+      # posting into batch/tracker-additions/, per batch-prompt.md, but nothing
+      # folded those into data/applications.md. merge-tracker.mjs is a safe,
+      # locked, no-op-when-empty operation (confirmed via --dry-run), so it's
+      # fine to run after every job, not just the ones that produce TSVs.
+      - name: Merge any pending tracker additions
+        if: always()
+        working-directory: candor
+        run: node merge-tracker.mjs
+
+      # Weekly pipeline hygiene, piggybacking on the existing Sunday
+      # weeklyrollup slot rather than adding a new schedule entry.
+      # verify-pipeline.mjs and detect-reposts.mjs are read-only reports.
+      # normalize-statuses.mjs writes (canonicalizes status strings only —
+      # low risk). dedup-tracker.mjs stays --dry-run: it would delete rows it
+      # judges duplicate, and that's a call worth a human looking at the
+      # report first, not doing unattended. prune-stale-backlog.mjs writes
+      # (drops pipeline.md entries pending > 7 days, its own default) — the
+      # whole reason it exists is the backlog growing unbounded (see its own
+      # header), so a real run here is the point, not just a report.
+      - name: Weekly pipeline maintenance
+        if: always() && steps.pick.outputs.job == 'weeklyrollup'
+        working-directory: candor
+        run: |
+          echo "--- verify-pipeline.mjs ---"
+          node verify-pipeline.mjs || true
+          echo "--- normalize-statuses.mjs ---"
+          node normalize-statuses.mjs || true
+          echo "--- dedup-tracker.mjs (dry-run — report only) ---"
+          node dedup-tracker.mjs --dry-run || true
+          echo "--- prune-stale-backlog.mjs ---"
+          node scripts/prune-stale-backlog.mjs || true
+          echo "--- detect-reposts.mjs --summary ---"
+          node detect-reposts.mjs --summary || true
+
       - name: Copy data changes back into the candor-data checkout
         if: always()
         run: |

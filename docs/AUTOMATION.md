@@ -349,6 +349,17 @@ path for the same reason it's not on `CAREER_OPS_CLI=gemini` at all — see its
 own header — so it still needs a machine running an agentic CLI with real
 web-search tool access (the existing launchd/cron job, or a VM you control).
 
+The workflow also runs `merge-tracker.mjs` after every job (safe no-op when
+`batch/tracker-additions/` is empty — confirmed via `--dry-run`), since
+nothing else in the unattended chain ever folded `draft-apply-sweep.sh`'s
+TSVs into `data/applications.md` otherwise. On the weekly trigger it
+additionally runs pipeline hygiene: `verify-pipeline.mjs` and
+`detect-reposts.mjs --summary` (read-only reports), `normalize-statuses.mjs`
+(writes — canonicalizes status strings only), `dedup-tracker.mjs --dry-run`
+(report only — deleting rows it judges duplicate stays a human call), and
+`prune-stale-backlog.mjs` (writes, default 7-day threshold — the backlog
+growing unbounded is the exact problem it exists to solve).
+
 ### Gate what a scan-and-score run merges into the tracker
 
 If you also run a scan-and-score agent (custom, or one you've built per
