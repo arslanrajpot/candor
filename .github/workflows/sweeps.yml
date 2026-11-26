@@ -86,7 +86,12 @@ jobs:
           # occasionally flaky on a fresh CI runner, and the code that would
           # use it already degrades gracefully when it's absent.
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
-        run: npm ci
+        # root package-lock.json is deliberately gitignored in this project
+        # (only web/package-lock.json is tracked), so `npm ci` — which
+        # requires a committed lockfile — fails here. `npm install` is the
+        # correct command for how this project actually expects to be
+        # installed.
+        run: npm install
 
       - name: Determine which sweep this trigger means to run
         id: pick
