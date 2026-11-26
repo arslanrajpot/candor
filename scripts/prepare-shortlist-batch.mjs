@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { isMainModule } from '../lib/is-main-module.mjs';
 
 const PENDING_LINE = /^- \[ \] (https?:\/\/\S+)/;
 
@@ -59,6 +60,13 @@ export function renderBatch({ lines, totalPending, selected, leftover }, date) {
   ].join('\n');
 }
 
+const USAGE = `Usage: node scripts/prepare-shortlist-batch.mjs [--limit N] [--root DIR]
+
+  --limit N    How many of the newest pending postings to select (default: 100)
+  --root DIR   Data root to read/write (default: the repository this script lives in)
+  --help, -h   Show this message and exit
+`;
+
 function parseArgs(argv) {
   const out = { limit: 100, root: join(dirname(fileURLToPath(import.meta.url)), '..') };
   for (let i = 0; i < argv.length; i++) {
@@ -69,7 +77,12 @@ function parseArgs(argv) {
 }
 
 function main() {
-  const { limit, root } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
+  const { limit, root } = parseArgs(argv);
   const pipelinePath = join(root, 'data', 'pipeline.md');
   const outPath = join(root, 'data', 'shortlist-batch.md');
   const markdown = existsSync(pipelinePath) ? readFileSync(pipelinePath, 'utf8') : '';
@@ -82,4 +95,4 @@ function main() {
   console.log(`prepare-shortlist-batch: ${result.selected} selected, ${result.leftover} older left, ${result.totalPending} pending -> ${outPath}`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+if (isMainModule(import.meta.url)) main();

@@ -25,6 +25,15 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { isMainModule } from '../lib/is-main-module.mjs';
+
+const USAGE = `Usage: node scripts/apply-digest-marks.mjs --date YYYY-MM-DD [--root DIR] [--dry-run]
+
+  --date YYYY-MM-DD   The digest date to apply marks for (default: today)
+  --root DIR          Data root to read/write (default: the repository this script lives in)
+  --dry-run           Report what would be marked without writing pipeline.md
+  --help, -h          Show this message and exit
+`;
 
 /**
  * @param {string} json - the digest-results-{date}.json contents
@@ -69,6 +78,10 @@ export function markDigestResults(pipelineMd, results, date) {
 
 function main() {
   const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
   const dryRun = argv.includes('--dry-run');
   const rootIdx = argv.indexOf('--root');
   const root = rootIdx >= 0 ? argv[rootIdx + 1] : join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -94,4 +107,4 @@ function main() {
   );
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+if (isMainModule(import.meta.url)) main();
