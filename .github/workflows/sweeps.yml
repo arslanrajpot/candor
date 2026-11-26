@@ -55,12 +55,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout candor (code)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: candor
 
       - name: Checkout candor-data (private personal data)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: arslanrajpot/candor-data
           token: ${{ secrets.CANDOR_DATA_PAT }}
@@ -70,7 +70,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zsh rsync
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
