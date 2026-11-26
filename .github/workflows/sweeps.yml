@@ -79,6 +79,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: candor
+        env:
+          # None of these 6 scheduled scripts drive a real browser — Playwright's
+          # own download of a Chromium binary (career-ops's postinstall hook,
+          # used elsewhere for JD-fetch fallback / PDF rendering) is slow and
+          # occasionally flaky on a fresh CI runner, and the code that would
+          # use it already degrades gracefully when it's absent.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 'true'
         run: npm ci
 
       - name: Determine which sweep this trigger means to run
