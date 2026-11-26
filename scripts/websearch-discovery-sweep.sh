@@ -66,9 +66,14 @@ When all targets are processed, write the complete combined list as a single JSO
 Hard rules: never write to any file other than ${RAW_FILE}. Never open an apply link, submit a form, or generate any content beyond the JSON extraction above."
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
+source "$REPO/scripts/_claude-run-guard.sh"
+# Backstop only — normal full runs (40 searches) have taken 3-50 min; a
+# usage-limit hit is caught by the guard's content match within seconds, long
+# before this 45-minute ceiling would ever fire.
+AGENT_MAX_WAIT_SECONDS=2700
 set +e
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') running websearch discovery agent ===" >> "$LOG_FILE"
-"$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "WebSearch" "Write" >> "$LOG_FILE" 2>&1
+run_claude_guarded "$LOG_FILE" "$AGENT_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "WebSearch" "Write"
 AGENT_STATUS=$?
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') websearch discovery agent done (exit $AGENT_STATUS) ===" >> "$LOG_FILE"
 
@@ -83,6 +88,8 @@ echo "=== $(date '+%Y-%m-%d %H:%M:%S') websearch discovery sweep done (agent exi
 
 if [ "$AGENT_STATUS" = "0" ] && [ "$APPLY_STATUS" = "0" ]; then
   osascript -e "display notification \"WebSearch discovery sweep finished — see $LOG_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
+elif [ "$AGENT_STATUS" = "75" ]; then
+  osascript -e "display notification \"WebSearch discovery sweep skipped — account usage limit already hit this morning (detected in seconds, no tokens/wall-clock wasted). Will try again next scheduled run.\" with title \"career-ops\"" >/dev/null 2>&1 || true
 else
   osascript -e "display notification \"WebSearch discovery sweep failed (agent $AGENT_STATUS, apply $APPLY_STATUS) — check $LOG_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
 fi

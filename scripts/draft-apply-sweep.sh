@@ -54,6 +54,12 @@ mkdir -p "$(dirname "$LOG_FILE")" "$REPO/reports" "$BATCH_DIR"
 DAILY_DRAFT_CEILING=10
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
+source "$REPO/scripts/_claude-run-guard.sh"
+# Backstop per report (this loop calls claude once PER completed report, so an
+# unguarded hang here is multiplicative — N reports stuck 3+ hours each, not
+# just one). A single-file read+append normally takes well under a minute; a
+# usage-limit hit is caught by the guard's content match within seconds.
+COVER_LETTER_MAX_WAIT_SECONDS=1200
 
 # Literal, single-quoted (no variable/backtick expansion) cover-letter template,
 # verbatim from modes/oferta.md's own "Cover Letter Draft" spec.
@@ -243,8 +249,16 @@ Do not modify any other file. Do not run any command. Output nothing else once t
       # is exactly how this runs in production). --permission-mode acceptEdits
       # auto-approves file edits/writes specifically without disabling every
       # other permission check.
-      "$CLAUDE_BIN" -p "$instructions" --allowedTools "Read" "Write" --permission-mode acceptEdits
-      DRAFTED=$((DRAFTED + 1))
+      run_claude_guarded "$LOG_FILE" "$COVER_LETTER_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$instructions" --allowedTools "Read" "Write" --permission-mode acceptEdits
+      cover_status=$?
+      if [ "$cover_status" = "75" ]; then
+        echo "Cover letter draft for $report_file skipped — usage limit hit; $report_file still missing '## Cover Letter Draft', will retry next run. Stopping this loop early (the limit won't clear mid-run, so trying the remaining reports now would just repeat the same abort)."
+        break
+      elif [ "$cover_status" != "0" ]; then
+        echo "Cover letter draft for $report_file FAILED (exit $cover_status) — $report_file still missing '## Cover Letter Draft', will retry next run."
+      else
+        DRAFTED=$((DRAFTED + 1))
+      fi
     done < "$STATE_FILE"
   fi
   echo "Cover-letter/answers supplement applied to $DRAFTED report(s); $HELD held needing agency confirmation."

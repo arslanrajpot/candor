@@ -59,10 +59,15 @@ Each line: \`- <company> — <title> — <one-line reason>  <url>\` — the reas
 If the batch file lists no postings, still write data/shortlist.md with all three headings present and empty (so it clearly reflects an empty queue rather than leaving a stale file from a previous run). Overwrite any previous data/shortlist.md with today's result. Do not touch any other file — marking the Skip postings in the pipeline is done for you afterwards."
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
+source "$REPO/scripts/_claude-run-guard.sh"
+# Backstop only — batch-150 runs have taken 2-60 min; a usage-limit hit is
+# caught by the guard's content match within seconds, long before this
+# 30-minute ceiling would ever fire.
+RUN_MAX_WAIT_SECONDS=1800
 set +e
 touch "$RUN_MARKER"
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') shortlist sweep starting (batch $SHORTLIST_BATCH) ===" >> "$LOG_FILE" 2>&1
-"$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write" >> "$LOG_FILE" 2>&1
+run_claude_guarded "$LOG_FILE" "$RUN_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write"
 RUN_STATUS=$?
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') shortlist sweep done (exit $RUN_STATUS) -> $SHORTLIST_FILE ===" >> "$LOG_FILE" 2>&1
 set -e
@@ -79,6 +84,8 @@ if [ "$RUN_STATUS" = "0" ] && [ -f "$SHORTLIST_FILE" ] && [ "$SHORTLIST_FILE" -n
   # it always reads the shortlist this run just wrote, however long that took.
   # It owns its own logging and chains on to draft-apply-sweep.sh itself.
   "$REPO/scripts/daily-digest-sweep.sh" || true
+elif [ "$RUN_STATUS" = "75" ]; then
+  osascript -e "display notification \"Shortlist sweep skipped — account usage limit already hit this morning (detected in seconds, no tokens/wall-clock wasted). Will try again next scheduled run.\" with title \"career-ops\"" >/dev/null 2>&1 || true
 else
   osascript -e "display notification \"Shortlist sweep failed or wrote nothing new (exit ${RUN_STATUS:-unknown}) — check $LOG_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
 fi

@@ -102,9 +102,13 @@ IMPORTANT — this file may already exist from an earlier run today (a retry, or
 Hard rules for this entire run: never open a posting's apply link or submit a form, never generate a PDF or cover letter or draft application answers, never write or edit data/applications.md, data/pipeline.md, or any reports/ file other than today's digest, never run the oferta or auto-pipeline mode, never spawn a subagent. This is evaluation and reporting only."
 
 CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
+source "$REPO/scripts/_claude-run-guard.sh"
+# Backstop only — a usage-limit hit is caught by the guard's content match
+# within seconds, long before this 30-minute ceiling would ever fire.
+RUN_MAX_WAIT_SECONDS=1800
 set +e
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') daily digest sweep starting ===" >> "$LOG_FILE" 2>&1
-"$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write" >> "$LOG_FILE" 2>&1
+run_claude_guarded "$LOG_FILE" "$RUN_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$PROMPT" --allowedTools "Read" "Write"
 RUN_STATUS=$?
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') daily digest sweep done (exit $RUN_STATUS) -> $DIGEST_FILE ===" >> "$LOG_FILE" 2>&1
 set -e
@@ -121,6 +125,8 @@ if [ "$RUN_STATUS" = "0" ] && [ -f "$DIGEST_FILE" ]; then
   # score gate) to each completed report — still evaluation/drafting only,
   # nothing is ever submitted or sent. See scripts/draft-apply-sweep.sh.
   "$REPO/scripts/draft-apply-sweep.sh" "$TODAY" || true
+elif [ "$RUN_STATUS" = "75" ]; then
+  osascript -e "display notification \"Daily digest sweep skipped — account usage limit already hit (detected in seconds, no tokens/wall-clock wasted). Will try again next scheduled run.\" with title \"career-ops\"" >/dev/null 2>&1 || true
 else
   osascript -e "display notification \"Daily digest sweep failed (exit ${RUN_STATUS:-unknown}) — check $LOG_FILE\" with title \"career-ops\"" >/dev/null 2>&1 || true
 fi
