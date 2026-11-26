@@ -50,15 +50,49 @@ esac
 
 PROMPT="Run the career-ops 'followup' mode (modes/followup.md) against $ROOT/data/applications.md and $ROOT/data/follow-ups.md. Run node followup-cadence.mjs, and for every overdue/urgent entry generate the follow-up email/LinkedIn draft per the mode's framework (voice-dna.md guardrails apply). Write the full dashboard plus every generated draft to $DRAFT_FILE as markdown. Do NOT send, submit, or record anything as sent -- draft-only, for the user to review later. If there is nothing overdue/urgent, write a one-line note to that file saying so instead."
 
-CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
-source "$REPO/scripts/_claude-run-guard.sh"
-# Backstop only — a usage-limit hit is caught by the guard's content match
-# within seconds, long before this 20-minute ceiling would ever fire.
-RUN_MAX_WAIT_SECONDS=1200
+# Which provider runs this sweep (see shortlist-sweep.sh for the same check).
+AGENT_CLI="$(node --input-type=module -e "
+import { readRememberedCli } from './lib/agent-cli.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
+process.stdout.write(readRememberedCli(getCareerOpsRoot()) || 'claude');
+" 2>/dev/null || echo claude)"
+
 set +e
-echo "=== $(date '+%Y-%m-%d %H:%M:%S') follow-up sweep starting ===" >> "$LOG_FILE"
-run_claude_guarded "$LOG_FILE" "$RUN_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$PROMPT"
-FOLLOWUP_STATUS=$?
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') follow-up sweep starting (cli $AGENT_CLI) ===" >> "$LOG_FILE"
+if [ "$AGENT_CLI" = "gemini" ]; then
+  # followup-cadence.mjs --overdue-only already computes exactly the list the
+  # Claude prompt above asks the agent to derive itself by "running" the
+  # script — doing it here means the Gemini worker (a bare text completion,
+  # no Bash of its own) gets the same authoritative list as data, not a task.
+  CADENCE_FILE="$ROOT/data/.followup-cadence-gemini-${DATE_STR}.json"
+  if ! node followup-cadence.mjs --overdue-only --json > "$CADENCE_FILE" 2>>"$LOG_FILE"; then
+    echo "=== $(date '+%Y-%m-%d %H:%M:%S') follow-up sweep: followup-cadence.mjs failed, aborting ===" >> "$LOG_FILE"
+    FOLLOWUP_STATUS=1
+  else
+    GEMINI_PROMPT="Draft follow-up messages for every overdue/urgent application in the JSON below (already computed by followup-cadence.mjs --overdue-only — this is the authoritative, complete list; do not recompute it, do not add or omit entries).
+
+For each entry, generate the follow-up email/LinkedIn draft per the framework in the modes/followup.md file block below, applying the voice-dna.md file block's guardrails when that file is present and non-empty.
+
+Output ONLY the raw markdown that should be written to the drafts file: a short dashboard summarizing the entries, then every generated draft. No commentary, no preamble or epilogue, no code fences — whatever you output is written verbatim to that file.
+
+If the JSON list is empty, output a single line noting nothing is currently overdue or urgent, instead of a dashboard."
+    node "$REPO/scripts/run-gemini-worker.mjs" \
+      --instructions-text "$GEMINI_PROMPT" \
+      --context "$REPO/modes/followup.md" \
+      --context "$ROOT/voice-dna.md" \
+      --context "$CADENCE_FILE" \
+      --out "$DRAFT_FILE" >> "$LOG_FILE" 2>&1
+    FOLLOWUP_STATUS=$?
+  fi
+else
+  CLAUDE_BIN="$(command -v claude || echo "$HOME/.local/bin/claude")"
+  source "$REPO/scripts/_claude-run-guard.sh"
+  # Backstop only — a usage-limit hit is caught by the guard's content match
+  # within seconds, long before this 20-minute ceiling would ever fire.
+  RUN_MAX_WAIT_SECONDS=1200
+  run_claude_guarded "$LOG_FILE" "$RUN_MAX_WAIT_SECONDS" "$CLAUDE_BIN" -p "$PROMPT"
+  FOLLOWUP_STATUS=$?
+fi
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') follow-up sweep done (exit $FOLLOWUP_STATUS) -> $DRAFT_FILE ===" >> "$LOG_FILE"
 set -e
 
