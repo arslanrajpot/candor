@@ -25,6 +25,33 @@
 # both scripts touch pipeline.md, and only appendToPipeline's file lock
 # protects a WRITE from scan.mjs/this script; shortlist-sweep.sh's agent edits
 # the file directly, so the two must not run concurrently.
+#
+# NOT migrated to CAREER_OPS_CLI=gemini (2026-11-26), unlike shortlist-sweep.sh,
+# daily-digest-sweep.sh, followup-sweep.sh and draft-apply-sweep.sh — this is
+# the one sweep whose whole job genuinely needs live web search, and that is
+# where the direct-API approach those four use stops being safely verifiable
+# from here:
+#   - The installed SDK, @google/generative-ai (^0.24.1), reached its own
+#     documented end-of-life 2025-11-30 and is in "limited maintenance" —
+#     Google's current grounding docs are written against its successor,
+#     @google/genai, which is not installed.
+#   - The legacy SDK's TYPES declare a googleSearchRetrieval tool, but that is
+#     an OLDER field name than the current API's googleSearch tool, and
+#     whether it still actually performs a live search against current models
+#     through this specific deprecated package — rather than silently being
+#     accepted and ignored, or rejected — could not be confirmed without a
+#     live GEMINI_API_KEY and a real call, neither available while writing
+#     this.
+#   - Getting this wrong here is a worse failure than the other four scripts:
+#     a judgment task that silently loses its tool access just scores worse;
+#     a DISCOVERY task that silently loses web search, with the model still
+#     asked to "find postings for this company", risks the model fabricating
+#     plausible-looking company/title/url rows it never actually found —
+#     exactly the kind of fabrication this project's Source-of-Truth rules
+#     exist to prevent, and apply-websearch-discoveries.mjs's real filtering
+#     only checks title/location/age, not whether a posting is real.
+# Runs on Claude regardless of CAREER_OPS_CLI until someone verifies grounding
+# against a real key (or the dependency is upgraded to @google/genai).
 
 set -uo pipefail
 

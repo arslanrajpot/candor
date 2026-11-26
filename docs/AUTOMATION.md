@@ -210,6 +210,24 @@ Each line: `- <company> — <title> — <one-line reason>  <url>`.
 Leave data/pipeline.md unchanged — this only reads it and writes data/shortlist.md.
 ```
 
+**Running this unattended on Gemini instead of Claude.** `scripts/shortlist-sweep.sh` (the
+launchd/cron-driven version of this same triage) reads `CAREER_OPS_CLI` — set with
+`node remember-cli.mjs gemini` — and when it is `gemini`, calls the Gemini API directly
+(`scripts/run-gemini-worker.mjs`, needs `GEMINI_API_KEY` in `.env`) instead of an agentic
+`claude -p` session. That's a deliberate choice, not a drop-in `gemini -p` call: the
+`gemini` CLI's own sandboxing/tool-restriction flags are unverified in this project (see
+`web/src/lib/cli-fencing.mjs`'s `FENCERS` table), and this triage step was built around a
+hard guarantee — the agent only ever gets Read/Write, never Bash. A bare text completion
+has no tool access to restrict in the first place: the script reads `config/profile.yml`
+and the batch file itself and hands their contents to Gemini as plain text, so there is
+nothing for an under-verified sandbox flag to fail silently on. The same treatment now
+also covers `daily-digest-sweep.sh`, `followup-sweep.sh`, and `draft-apply-sweep.sh`
+(2026-11-26). `websearch-discovery-sweep.sh` is the one exception, left on Claude
+regardless of `CAREER_OPS_CLI`: its whole job needs live web search, and the installed
+Gemini SDK's grounding support could not be verified without a live API key (see that
+script's own header for the full reasoning) — silently losing search there risks the
+model fabricating postings it never found, not just scoring worse.
+
 Open `data/shortlist.md`, then run a real evaluation only on the "Worth a look" rows:
 
 ```text
