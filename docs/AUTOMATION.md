@@ -360,6 +360,18 @@ additionally runs pipeline hygiene: `verify-pipeline.mjs` and
 `prune-stale-backlog.mjs` (writes, default 7-day threshold — the backlog
 growing unbounded is the exact problem it exists to solve).
 
+**This is one-way: GitHub Actions writes to `candor-data`, not back to your
+machine.** A local web dashboard or CLI session reads the local checkout, so
+without a pull step it goes stale the moment you move scans to Actions
+(discovered 2026-11-27 — a full day's scan/triage/digest results sat in
+`candor-data` while the local dashboard still showed pre-migration data).
+`scripts/sync-from-candor-data.sh` closes this: it pulls `candor-data` into
+`~/.career-ops-candor-data-cache` and overlays the same curated paths back
+onto the local checkout. Pure git+rsync, no LLM calls, safe to run often —
+wire it into a local launchd job on a short interval (e.g. hourly) rather
+than a fixed time, since a GitHub Actions `schedule` trigger can itself fire
+hours later than its cron time under load.
+
 ### Gate what a scan-and-score run merges into the tracker
 
 If you also run a scan-and-score agent (custom, or one you've built per
